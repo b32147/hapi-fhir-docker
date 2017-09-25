@@ -1,20 +1,42 @@
-FROM jetty:9-jre8-alpine
+FROM openjdk:8-jre-alpine
 
-# Install maven for the build and curl for healthchecks
-RUN apk --no-cache add curl maven
+# Install curl for healthchecks
+RUN apk add --update \
+    curl \
+    maven \
+    && rm -rf /var/cache/apk/*
 
-# Prepare the build directory and files
-RUN mkdir /hapi-fhir
-ADD ./settings.xml /hapi-fhir/settings.xml
-ADD ./pom.xml /hapi-fhir/pom.xml
-ADD ./src /hapi-fhir/src
+# Add a settings file for the Maven build
+ADD settings.xml /hapi-fhir/hapi-fhir-cli/settings.xml
 
-# Build the server and move it
-RUN cd /hapi-fhir && \
-  mvn package -s /hapi-fhir/settings.xml && \
-  mv /hapi-fhir/target/hapi-fhir-jpaserver-example.war /var/lib/jetty/webapps/root.war && \
-  rm -rf /hapi-fhir
+# Download the archive and extract it
+RUN curl -Ls https://github.com/jamesagnew/hapi-fhir/archive/v2.5.tar.gz \
+    | tar xfzv - -C /hapi-fhir --strip-components=1 && \
 
-USER jetty:jetty
+    # Update the server configuration files to disable search caching
+    find /hapi-fhir/hapi-fhir-cli/hapi-fhir-cli-jpaserver/src/main/java/ca/uhn/fhir/jpa/demo \
+        -name "FhirServerConfig*.java" \
+        -exec sed -i 's/DaoConfig retVal = new DaoConfig();/DaoConfig retVal = new DaoConfig();retVal.setReuseCachedSearchResultsForMillis(null);/g' {} + && \
 
-EXPOSE 8080
+    # Move to the CLI project directory.
+    cd /hapi-fhir/hapi-fhir-cli && \
+
+    # Build it!
+    mvn install -q -s /hapi-fhir/hapi-fhir-cli/settings.xml && \
+
+    # Move the built jar out of the build directory
+    mv /hapi-fhir/hapi-fhir-cli/hapi-fhir-cli-app/target/hapi-fhir-cli.jar /root/hapi-fhir-cli.jar && \
+
+    # Cleanup
+    rm -rf /hapi-fhir
+
+WORKDIR /root
+
+# Set the port for HAPI-FHIR
+ENV HAPI_FHIR_PORT 8080
+
+HEALTHCHECK CMD curl http://localhost:$HAPI_FHIR_PORT/baseDstu3/Patient
+
+EXPOSE $HAPI_FHIR_PORT
+
+CMD java -jar hapi-fhir-cli.jar run-server -p $HAPI_FHIR_PORT

@@ -10,7 +10,7 @@ RUN apk add --update \
 ADD settings.xml /hapi-fhir/hapi-fhir-cli/settings.xml
 
 # Download the archive and extract it
-RUN curl -Ls https://github.com/jamesagnew/hapi-fhir/archive/v2.5.tar.gz \
+RUN curl -Ls https://github.com/jamesagnew/hapi-fhir/archive/v3.0.0.tar.gz \
     | tar xfzv - -C /hapi-fhir --strip-components=1 && \
 
     # Update the server configuration files to disable search caching
